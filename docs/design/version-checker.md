@@ -1,223 +1,105 @@
-<!-- BEGIN MUNGE: UNVERSIONED_WARNING -->
+# Kubernetes Version Checker
 
-<!-- BEGIN STRIP_FOR_RELEASE -->
-
-<img src="http://kubernetes.io/img/warning.png" alt="WARNING"
-     width="25" height="25">
-<img src="http://kubernetes.io/img/warning.png" alt="WARNING"
-     width="25" height="25">
-<img src="http://kubernetes.io/img/warning.png" alt="WARNING"
-     width="25" height="25">
-<img src="http://kubernetes.io/img/warning.png" alt="WARNING"
-     width="25" height="25">
-<img src="http://kubernetes.io/img/warning.png" alt="WARNING"
-     width="25" height="25">
-
-<h2>PLEASE NOTE: This document applies to the HEAD of the source tree</h2>
-
-If you are using a released version of Kubernetes, you should
-refer to the docs that go with that version.
-
-Documentation for other releases can be found at
-[releases.k8s.io](http://releases.k8s.io).
-</strong>
---
-
-<!-- END STRIP_FOR_RELEASE -->
-
-<!-- END MUNGE: UNVERSIONED_WARNING -->
-
-
-# Kubernetes Release Notes
-
-[djmm@google.com](mailto:djmm@google.com)<BR>
-Last Updated: 2016-04-06
+[aronchick@google.com](mailto:aronchick@google.com)<BR>
+Last Updated: 2016-05-22
 
 <!-- BEGIN MUNGE: GENERATED_TOC -->
-
-- [Kubernetes Release Notes](#kubernetes-release-notes)
-  - [Objective](#objective)
-  - [Background](#background)
-    - [The Problem](#the-problem)
-    - [The (general) Solution](#the-general-solution)
-      - [Then why not just list *every* change that was submitted, CHANGELOG-style?](#then-why-not-just-list-every-change-that-was-submitted-changelog-style)
-  - [Options](#options)
-  - [Collection Design](#collection-design)
-  - [Publishing Design](#publishing-design)
-    - [Location](#location)
-    - [Layout](#layout)
-      - [Alpha/Beta/Patch Releases](#alphabetapatch-releases)
-      - [Major/Minor Releases](#majorminor-releases)
-  - [Work estimates](#work-estimates)
-  - [Caveats / Considerations](#caveats--considerations)
 
 <!-- END MUNGE: GENERATED_TOC -->
 
 ## Objective
 
-Define a process and design tooling for collecting, arranging and publishing
-release notes for Kubernetes releases, automating as much of the process as
-possible.
+Define a system for a Kubernetes cluster to check a defined endpoint
+for the most recent version of the software, and notify users of the
+opportunity to upgrade (both on the master and the nodes).
 
-The goal is to introduce minor changes to the development workflow
-in a way that is mostly frictionless and allows for the capture of release notes
-as PRs are submitted to the repository.
-
-This direct association of release notes to PRs captures the intention of
-release visibility of the PR at the point an idea is submitted upstream.
-The release notes can then be more easily collected and published when the
-release is ready.
+A non-goal of this proposal is to provide the method to upgrade either
+the master or the nodes. This proposal only covers the notification.
 
 ## Background
 
 ### The Problem
 
-Release notes are often an afterthought and clarifying and finalizing them
-is often left until the very last minute at the time the release is made.
-This is usually long after the feature or bug fix was added and is no longer on
-the mind of the author.  Worse, the collecting and summarizing of the
-release is often left to those who may know little or nothing about these
-individual changes!
+A substantial challenge for Kubernetes administrators is to ensure their
+clusters keep up with current stable releases of Kubernetes, both on the
+master and on the individual nodes. While an administrator can manually
+write scripts to query the API server and kubelet versions in a cluster,
+and then query the Github to check the source code version, we can do better
+by providing a single service built into Kubernetes that automatically checks
+and alerts the administrator when their infrastructure requires an update.
 
-Writing and editing release notes at the end of the cycle can be a rushed,
-interrupt-driven and often stressful process resulting in incomplete,
-inconsistent release notes often with errors and omissions.
+### Goals
+Our primary goal is to reduce the clusters are out of date with the most recent
+stable version, and causing problems for customers. Customers repeatedly report
+that they would update their clusters if they knew they were out of date, but 
+they often miss the notifications via email or RSS that a new version is available.
+This information is not available where they are - specifically interacting via
+the CLI or the UI.
 
-### The (general) Solution
+Our secondary goal is to make it absurdly easy for administrators to understand
+the state of their cluster at any time. To do this, the Kubernetes project should
+have a hosted service that enables the server pull down the most recent version,
+and run a comparison with current masters and nodes. Further, we will build into
+the API and CLI a simple method to report on the most recent version and whether or not
+the current master and nodes are running on the latest version. 
 
-Like most things in the development/release pipeline, the earlier you do it,
-the easier it is for everyone and the better the outcome.  Gather your release
-notes earlier in the development cycle, at the time the features and fixes are
-added.
+Our third goal is to ensure that we provide this service in a way that users can 
+completely trust (and do not turn off). This means we must be completely 
+transparent that we are not collecting any identifying information, and that all
+associated logs will be anonymized immediately.
 
-#### Then why not just list *every* change that was submitted, CHANGELOG-style?
+### Non-Goals
 
-On larger projects like Kubernetes, showing every single change (PR) would mean
-hundreds of entries.  The goal is to highlight the major changes for a release.
+Out of scope is enabling users to upgrade once people have been informed their nodes are out of date.
 
-## Options
+### User Experience
 
-1. Use of pre-commit and other local git hooks
-   * Experiments here using `prepare-commit-msg` and `commit-msg` git hook files
-     were promising but less than optimal due to the fact that they would
-     require input/confirmation with each commit and there may be multiple
-     commits in a push and eventual PR.
-1. Use of [github templates](https://github.com/blog/2111-issue-and-pull-request-templates)
-   * Templates provide a great way to pre-fill PR comments, but there are no
-     server-side hooks available to parse and/or easily check the contents of
-     those templates to ensure that checkboxes were checked or forms were filled
-     in.
-1. Use of labels enforced by mungers/bots
-   * We already make great use of mungers/bots to manage labels on PRs and it
-     fits very nicely in the existing workflow
-
-## Collection Design
-
-The munger/bot option fits most cleanly into the existing workflow.
-
-All `release-note-*` labeling is managed on the master branch PR only.
-No `release-note-*` labels are needed on cherry-pick PRs and no information
-will be collected from that cherry-pick PR.
-
-The only exception to this rule is when a PR is not a cherry-pick and is
-targeted directly to the non-master branch.  In this case, a `release-note-*`
-label is required for that non-master PR.
-
-1. New labels added to github: `release-note-none`, maybe others for new release note categories - see Layout section below
-1. A [new munger](https://github.com/kubernetes/kubernetes/issues/23409) that will:
-  * Add a `release-note-label-needed` label to all new master branch PRs
-  * Block merge by the submit queue on all PRs labeled as `release-note-label-needed`
-  * Auto-remove `release-note-label-needed` when one of the `release-note-*` labels is added
-
-## Publishing Design
-
-### Location
-
-With v1.2.0, the release notes were moved from their previous [github releases](https://github.com/kubernetes/kubernetes/releases)
-location to [CHANGELOG.md](../../CHANGELOG.md).  Going forward this seems like a good plan.
-Other projects do similarly.
-
-The kubernetes.tar.gz download link is also displayed along with the release notes
-in [CHANGELOG.md](../../CHANGELOG.md).
-
-Is there any reason to continue publishing anything to github releases if
-the complete release story is published in [CHANGELOG.md](../../CHANGELOG.md)?
-
-### Layout
-
-Different types of releases will generally have different requirements in
-terms of layout.  As expected, major releases like v1.2.0 are going
-to require much more detail than the automated release notes will provide.
-
-The idea is that these mechanisms will provide 100% of the release note
-content for alpha, beta and most minor releases and bootstrap the content
-with a release note 'template' for the authors of major releases like v1.2.0.
-
-The authors can then collaborate and edit the higher level sections of the
-release notes in a PR, updating [CHANGELOG.md](../../CHANGELOG.md) as needed.
-
-v1.2.0 demonstrated the need, at least for major releases like v1.2.0, for
-several sections in the published release notes.
-In order to provide a basic layout for release notes in the future,
-new releases can bootstrap [CHANGELOG.md](../../CHANGELOG.md) with the following template types:
-
-#### Alpha/Beta/Patch Releases
-
-These are automatically generated from `release-note*` labels, but can be modified as needed.
+On cluster setup (both on GKE and k8s), the administrator is presented with a dialog as the last step that reads:
 
 ```
-Action Required
-* PR titles from the release-note-action-required label
+Would you like to have Kubernetes check for a new version once a week? 
 
-Other notable changes
-* PR titles from the release-note label
+[If yes]
+
+If you would like to change this setting at any time, run the following command:
+  kubectl config set autoupdate=off
 ```
 
-#### Major/Minor Releases
+### Implementation
+The version checker will run as a cluster add-on. However, syntactic sugar will be provided to appear as though the system has integrated version checking in kubectl.
+
+On midnight on Sunday (+/- rand(60 minutes)), the version checker pod will contact a hosted endpoint (e.g. http://version.k8s.io) which will contain a string (e.g. "1.2.4"). The pod will download and store that information as the "latest" version. 
+
+Question: Should the cluster attach cluster UUID to the query? Is there any reason that this would help the system?
+
+A user can also manually run a check by executing the following command:
 
 ```
-Major Themes
-* Add to or delete this section
+$ kubectl check-version
+[Checking with http://version.k8s.io]
+Latest Version: 1.1.4
 
-Other notable improvements
-* Add to or delete this section
+Kubernetes Master
+IP: 192.168.14.5
+Current Version: 1.1.3
+Status: Needs Update
 
-Experimental Features
-* Add to or delete this section
-
-Action Required
-* PR titles from the release-note-action-required label
-
-Known Issues
-* Add to or delete this section
-
-Provider-specific Notes
-* Add to or delete this section
-
-Other notable changes
-* PR titles from the release-note label
+Kubernetes Nodes:
+NAME              IP            VERSION STATUS
+clstr-node-iqes   192.168.15.4  1.1.4   Up To Date
+clstr-node-op7r   192.168.15.5  1.1.4   Up To Date
+clstr-node-ur03   192.168.15.6  1.1.3   Needs Update
+clstr-node-xwdi   192.168.15.7  1.0.4   Needs Update
 ```
 
-## Work estimates
+Kubernetes will also set a flag such that at the next time kubectl is run, the system will output a line of information to the end user (once, and once only).
 
-* The [new munger](https://github.com/kubernetes/kubernetes/issues/23409)
-  * Owner: @eparis
-  * Time estimate: Mostly done
-* Updates to the tool that collects, organizes, publishes and sends release
-  notifications.
-  * Owner: @david-mcmahon
-  * Time estimate: A few days
+```
+$ kubectl get pods
+[Notice] There are updates available for your cluster. Please run kubectl check-version for more information.
 
-
-## Caveats / Considerations
-
-* As part of the planning and development workflow how can we capture
-  release notes for bigger features?
-  [#23070](https://github.com/kubernetes/kubernetes/issues/23070)
-  * For now contributors should simply use the first PR that enables a new
-    feature by default.  We'll revisit if this does not work well.
-
+<remainder of output>
+```
 
 <!-- BEGIN MUNGE: GENERATED_ANALYTICS -->
-[![Analytics](https://kubernetes-site.appspot.com/UA-36037335-10/GitHub/docs/proposals/release-notes.md?pixel)]()
 <!-- END MUNGE: GENERATED_ANALYTICS -->
