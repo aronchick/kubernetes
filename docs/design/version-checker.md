@@ -45,8 +45,9 @@ the current master and nodes are running on the latest version.
 
 Our third goal is to ensure that we provide this service in a way that users can 
 completely trust (and do not turn off). This means we must be completely 
-transparent that we are not collecting any identifying information, and that all
-associated logs will be anonymized immediately.
+transparent that we are not collecting any identifying information, and that any artifacts
+resulting from the query of the endpoint (basically the IP address of the requesting cluster)
+will be anonymized immediately.
 
 ### Non-Goals
 
@@ -68,9 +69,9 @@ If you would like to change this setting at any time, run the following command:
 ### Implementation
 The version checker will run as a cluster add-on. However, syntactic sugar will be provided to appear as though the system has integrated version checking in kubectl.
 
-On midnight on Sunday (+/- rand(60 minutes)), the version checker pod will contact a hosted endpoint (e.g. http://version.k8s.io) which will contain a string (e.g. "1.2.4"). The pod will download and store that information as the "latest" version. 
+On a regular basis (e.g. midnight on Sunday (+/- rand(60 minutes))), the version checker pod will contact a hosted endpoint (e.g. http://version.k8s.io) which will contain a string (e.g. "1.2.4"). The pod will download and store that information as the "latest" version. 
 
-Question: Should the cluster attach cluster UUID to the query? Is there any reason that this would help the system?
+*Question: Should the cluster attach cluster UUID to the query? Is there any reason that this would help the system?*
 
 A user can also manually run a check by executing the following command:
 
